@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cuboid, Cherry, Cylinder, Cone, Pyramid, Move, RotateCw, Maximize, Vector, Box, Link } from 'lucide-react';
+import { Cuboid, Cherry, Cylinder, Cone, Pyramid, Move, RotateCw, Maximize, Projector as Vector, Box, Link } from 'lucide-react';
 import { useSceneStore } from '../store/sceneStore';
 import * as THREE from 'three';
 
