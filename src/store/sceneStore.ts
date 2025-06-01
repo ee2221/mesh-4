@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import * as THREE from 'three';
+import { NURBSSurface } from 'three/examples/jsm/curves/NURBSSurface';
+import { NURBSCurve } from 'three/examples/jsm/curves/NURBSCurve';
 
-type EditMode = 'vertex' | 'edge' | 'face' | 'nurbs' | 'curve' | null;
+type EditMode = 'vertex' | 'edge' | 'face' | 'nurbs' | 'curve' | 'extrude' | 'bevel' | null;
 
 interface SceneState {
   objects: Array<{
@@ -18,6 +20,11 @@ interface SceneState {
     edges: number[];
     faces: number[];
   };
+  controlPoints: THREE.Vector3[];
+  nurbsObjects: {
+    surfaces: NURBSSurface[];
+    curves: NURBSCurve[];
+  };
   addObject: (object: THREE.Object3D, name: string) => void;
   removeObject: (id: string) => void;
   setSelectedObject: (object: THREE.Object3D | null) => void;
@@ -29,9 +36,15 @@ interface SceneState {
   updateObjectColor: (color: string) => void;
   updateObjectOpacity: (opacity: number) => void;
   setSelectedElements: (type: 'vertices' | 'edges' | 'faces', indices: number[]) => void;
+  addControlPoint: (point: THREE.Vector3) => void;
+  clearControlPoints: () => void;
+  createNURBSSurface: () => void;
+  createNURBSCurve: () => void;
+  extrudeFace: (distance: number) => void;
+  bevelEdge: (segments: number, offset: number) => void;
 }
 
-export const useSceneStore = create<SceneState>((set) => ({
+export const useSceneStore = create<SceneState>((set, get) => ({
   objects: [],
   selectedObject: null,
   transformMode: 'translate',
@@ -40,6 +53,11 @@ export const useSceneStore = create<SceneState>((set) => ({
     vertices: [],
     edges: [],
     faces: [],
+  },
+  controlPoints: [],
+  nurbsObjects: {
+    surfaces: [],
+    curves: [],
   },
   addObject: (object, name) =>
     set((state) => ({
@@ -105,4 +123,66 @@ export const useSceneStore = create<SceneState>((set) => ({
         [type]: indices,
       },
     })),
+  addControlPoint: (point) =>
+    set((state) => ({
+      controlPoints: [...state.controlPoints, point],
+    })),
+  clearControlPoints: () =>
+    set((state) => ({
+      controlPoints: [],
+    })),
+  createNURBSSurface: () => {
+    const { controlPoints } = get();
+    if (controlPoints.length >= 16) {
+      // Create a 4x4 NURBS surface
+      const surface = new NURBSSurface(2, 2, 4, 4, controlPoints);
+      set((state) => ({
+        nurbsObjects: {
+          ...state.nurbsObjects,
+          surfaces: [...state.nurbsObjects.surfaces, surface],
+        },
+        controlPoints: [],
+      }));
+    }
+  },
+  createNURBSCurve: () => {
+    const { controlPoints } = get();
+    if (controlPoints.length >= 4) {
+      const knots = [];
+      const degree = 3;
+      for (let i = 0; i <= controlPoints.length + degree; i++) {
+        knots.push(i);
+      }
+      const curve = new NURBSCurve(degree, knots, controlPoints);
+      set((state) => ({
+        nurbsObjects: {
+          ...state.nurbsObjects,
+          curves: [...state.nurbsObjects.curves, curve],
+        },
+        controlPoints: [],
+      }));
+    }
+  },
+  extrudeFace: (distance) => {
+    const { selectedObject, selectedElements } = get();
+    if (selectedObject instanceof THREE.Mesh && selectedElements.faces.length > 0) {
+      const geometry = selectedObject.geometry as THREE.BufferGeometry;
+      // Implementation for face extrusion
+      // This would involve creating new vertices and faces
+      // Update the geometry with new data
+      geometry.computeVertexNormals();
+      geometry.computeBoundingSphere();
+    }
+  },
+  bevelEdge: (segments, offset) => {
+    const { selectedObject, selectedElements } = get();
+    if (selectedObject instanceof THREE.Mesh && selectedElements.edges.length > 0) {
+      const geometry = selectedObject.geometry as THREE.BufferGeometry;
+      // Implementation for edge beveling
+      // This would involve creating new vertices and faces along the edge
+      // Update the geometry with new data
+      geometry.computeVertexNormals();
+      geometry.computeBoundingSphere();
+    }
+  },
 }));
