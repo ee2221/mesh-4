@@ -23,6 +23,8 @@ interface SceneState {
   draggedVertex: {
     index: number;
     position: THREE.Vector3;
+    initialPosition: THREE.Vector3;
+    connectedVertices: number[];
   } | null;
   controlPoints: THREE.Vector3[];
   nurbsObjects: {
@@ -132,8 +134,37 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       },
     })),
   startVertexDrag: (index, position) =>
-    set({
-      draggedVertex: { index, position: position.clone() }
+    set((state) => {
+      if (!(state.selectedObject instanceof THREE.Mesh)) return state;
+
+      const geometry = state.selectedObject.geometry;
+      const positions = geometry.attributes.position;
+      const connectedVertices: number[] = [];
+
+      // Find connected vertices by analyzing the geometry's index buffer
+      if (geometry.index) {
+        const indices = geometry.index.array;
+        for (let i = 0; i < indices.length; i += 3) {
+          for (let j = 0; j < 3; j++) {
+            if (indices[i + j] === index) {
+              // Add the other two vertices of the triangle
+              connectedVertices.push(
+                indices[i + ((j + 1) % 3)],
+                indices[i + ((j + 2) % 3)]
+              );
+            }
+          }
+        }
+      }
+
+      return {
+        draggedVertex: {
+          index,
+          position: position.clone(),
+          initialPosition: position.clone(),
+          connectedVertices: Array.from(new Set(connectedVertices))
+        }
+      };
     }),
   updateVertexDrag: (position) =>
     set((state) => {
@@ -142,13 +173,34 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       const geometry = state.selectedObject.geometry;
       const positions = geometry.attributes.position;
       
+      // Calculate the movement delta
+      const delta = position.clone().sub(state.draggedVertex.initialPosition);
+      
+      // Update the dragged vertex position
       positions.setXYZ(
         state.draggedVertex.index,
-        position.x,
-        position.y,
-        position.z
+        state.draggedVertex.initialPosition.x + delta.x,
+        state.draggedVertex.initialPosition.y + delta.y,
+        state.draggedVertex.initialPosition.z + delta.z
       );
+
+      // Update connected vertices with proportional movement
+      state.draggedVertex.connectedVertices.forEach(vertexIndex => {
+        const x = positions.getX(vertexIndex);
+        const y = positions.getY(vertexIndex);
+        const z = positions.getZ(vertexIndex);
+        
+        // Apply a fraction of the movement to connected vertices
+        positions.setXYZ(
+          vertexIndex,
+          x + delta.x * 0.5,
+          y + delta.y * 0.5,
+          z + delta.z * 0.5
+        );
+      });
+
       positions.needsUpdate = true;
+      geometry.computeVertexNormals();
       
       return {
         draggedVertex: {
