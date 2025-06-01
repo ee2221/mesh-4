@@ -22,6 +22,7 @@ interface SceneState {
     index: number;
     position: THREE.Vector3;
     initialPosition: THREE.Vector3;
+    connectedVertices: number[];
   } | null;
   addObject: (object: THREE.Object3D, name: string) => void;
   removeObject: (id: string) => void;
@@ -128,6 +129,26 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     set((state) => {
       if (!(state.selectedObject instanceof THREE.Mesh)) return state;
 
+      const geometry = state.selectedObject.geometry;
+      const positions = geometry.attributes.position;
+      const connectedVertices: number[] = [];
+
+      // Find connected vertices through faces
+      if (geometry.index) {
+        const indices = geometry.index.array;
+        for (let i = 0; i < indices.length; i += 3) {
+          for (let j = 0; j < 3; j++) {
+            if (indices[i + j] === index) {
+              // Add the other two vertices of the triangle
+              connectedVertices.push(
+                indices[i + ((j + 1) % 3)],
+                indices[i + ((j + 2) % 3)]
+              );
+            }
+          }
+        }
+      }
+
       // Select only this vertex
       set((state) => ({
         selectedElements: {
@@ -140,7 +161,8 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         draggedVertex: {
           index,
           position: position.clone(),
-          initialPosition: position.clone()
+          initialPosition: position.clone(),
+          connectedVertices: Array.from(new Set(connectedVertices))
         }
       };
     }),
@@ -152,15 +174,41 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       const geometry = state.selectedObject.geometry;
       const positions = geometry.attributes.position;
       
-      // Update only the selected vertex position
+      // Calculate movement delta
+      const delta = position.clone().sub(state.draggedVertex.initialPosition);
+      
+      // Update the dragged vertex position
       positions.setXYZ(
         state.draggedVertex.index,
-        position.x,
-        position.y,
-        position.z
+        state.draggedVertex.initialPosition.x + delta.x,
+        state.draggedVertex.initialPosition.y + delta.y,
+        state.draggedVertex.initialPosition.z + delta.z
       );
 
+      // Update connected vertices with scaled movement to maintain mesh structure
+      state.draggedVertex.connectedVertices.forEach(vertexIndex => {
+        const currentPos = new THREE.Vector3(
+          positions.getX(vertexIndex),
+          positions.getY(vertexIndex),
+          positions.getZ(vertexIndex)
+        );
+        
+        // Calculate distance-based influence
+        const distance = currentPos.distanceTo(state.draggedVertex.initialPosition);
+        const influence = 1 / (1 + distance);
+        
+        // Apply scaled movement
+        positions.setXYZ(
+          vertexIndex,
+          currentPos.x + delta.x * influence * 0.5,
+          currentPos.y + delta.y * influence * 0.5,
+          currentPos.z + delta.z * influence * 0.5
+        );
+      });
+
       positions.needsUpdate = true;
+      
+      // Recompute normals to maintain proper shading
       geometry.computeVertexNormals();
       
       return {
