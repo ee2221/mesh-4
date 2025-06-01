@@ -5,6 +5,7 @@ import { useSceneStore } from '../store/sceneStore';
 import * as THREE from 'three';
 
 const VertexPoints = ({ geometry }) => {
+  const { editMode, selectedElements, startVertexDrag } = useSceneStore();
   const positions = geometry.attributes.position;
   const vertices = [];
   
@@ -27,39 +28,95 @@ const VertexPoints = ({ geometry }) => {
         />
       </bufferGeometry>
       <pointsMaterial size={0.1} color="yellow" />
+      {vertices.map((vertex, i) => (
+        <mesh
+          key={i}
+          position={vertex}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (editMode === 'vertex') {
+              startVertexDrag(i, vertex);
+            }
+          }}
+        >
+          <sphereGeometry args={[0.05]} />
+          <meshBasicMaterial
+            color={selectedElements.vertices.includes(i) ? 'red' : 'yellow'}
+            transparent
+            opacity={0.5}
+          />
+        </mesh>
+      ))}
     </points>
   );
 };
 
 const EditModeOverlay = () => {
   const { scene, camera, raycaster, pointer } = useThree();
-  const { selectedObject, editMode, setSelectedElements } = useSceneStore();
+  const { 
+    selectedObject, 
+    editMode, 
+    setSelectedElements,
+    draggedVertex,
+    updateVertexDrag,
+    endVertexDrag
+  } = useSceneStore();
+  const plane = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0)));
+  const intersection = useRef(new THREE.Vector3());
 
   useEffect(() => {
     if (!selectedObject || !editMode || !(selectedObject instanceof THREE.Mesh)) return;
 
-    const handlePointerMove = () => {
+    const handlePointerMove = (event) => {
+      if (draggedVertex) {
+        raycaster.setFromCamera(pointer, camera);
+        raycaster.ray.intersectPlane(plane.current, intersection.current);
+        updateVertexDrag(intersection.current);
+        return;
+      }
+
       raycaster.setFromCamera(pointer, camera);
       const intersects = raycaster.intersectObject(selectedObject);
 
       if (intersects.length > 0) {
-        const intersection = intersects[0];
-        if (editMode === 'vertex' && intersection.face) {
+        const intersect = intersects[0];
+        if (editMode === 'vertex' && intersect.face) {
           const vertices = [
-            intersection.face.a,
-            intersection.face.b,
-            intersection.face.c
+            intersect.face.a,
+            intersect.face.b,
+            intersect.face.c
           ];
           setSelectedElements('vertices', vertices);
-        } else if (editMode === 'face' && intersection.face) {
-          setSelectedElements('faces', [intersection.faceIndex || 0]);
+        } else if (editMode === 'face' && intersect.face) {
+          setSelectedElements('faces', [intersect.faceIndex || 0]);
         }
       }
     };
 
+    const handlePointerUp = () => {
+      if (draggedVertex) {
+        endVertexDrag();
+      }
+    };
+
     window.addEventListener('pointermove', handlePointerMove);
-    return () => window.removeEventListener('pointermove', handlePointerMove);
-  }, [selectedObject, editMode, camera, raycaster, pointer, setSelectedElements]);
+    window.addEventListener('pointerup', handlePointerUp);
+    
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [
+    selectedObject,
+    editMode,
+    camera,
+    raycaster,
+    pointer,
+    setSelectedElements,
+    draggedVertex,
+    updateVertexDrag,
+    endVertexDrag
+  ]);
 
   if (!selectedObject || !editMode || !(selectedObject instanceof THREE.Mesh)) return null;
 
