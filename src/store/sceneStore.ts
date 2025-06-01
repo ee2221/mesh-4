@@ -1,7 +1,5 @@
 import { create } from 'zustand';
 import * as THREE from 'three';
-import { NURBSSurface } from 'three/examples/jsm/curves/NURBSSurface';
-import { NURBSCurve } from 'three/examples/jsm/curves/NURBSCurve';
 
 type EditMode = 'vertex' | 'edge' | 'face' | 'normal' | null;
 
@@ -24,11 +22,6 @@ interface SceneState {
     index: number;
     position: THREE.Vector3;
     initialPosition: THREE.Vector3;
-    connectedVertices: Array<{
-      index: number;
-      initialPosition: THREE.Vector3;
-      weight: number;
-    }>;
   } | null;
   addObject: (object: THREE.Object3D, name: string) => void;
   removeObject: (id: string) => void;
@@ -135,63 +128,19 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     set((state) => {
       if (!(state.selectedObject instanceof THREE.Mesh)) return state;
 
-      const geometry = state.selectedObject.geometry;
-      const positions = geometry.attributes.position;
-      const connectedVertices: Array<{ index: number; initialPosition: THREE.Vector3; weight: number }> = [];
-
-      // Find connected vertices through faces
-      if (geometry.index) {
-        const indices = geometry.index.array;
-        const vertexFaces = new Map<number, Set<number>>();
-        
-        // Build vertex-to-face map
-        for (let i = 0; i < indices.length; i += 3) {
-          const faceIndex = Math.floor(i / 3);
-          for (let j = 0; j < 3; j++) {
-            const vertexIndex = indices[i + j];
-            if (!vertexFaces.has(vertexIndex)) {
-              vertexFaces.set(vertexIndex, new Set());
-            }
-            vertexFaces.get(vertexIndex)!.add(faceIndex);
-          }
+      // Select only this vertex
+      set((state) => ({
+        selectedElements: {
+          ...state.selectedElements,
+          vertices: [index]
         }
-
-        // Find connected vertices through shared faces
-        const connectedIndices = new Set<number>();
-        const faces = vertexFaces.get(index) || new Set();
-        faces.forEach(faceIndex => {
-          for (let i = 0; i < 3; i++) {
-            const vertexIndex = indices[faceIndex * 3 + i];
-            if (vertexIndex !== index) {
-              connectedIndices.add(vertexIndex);
-            }
-          }
-        });
-
-        // Calculate weights based on distance
-        connectedIndices.forEach(vertexIndex => {
-          const x = positions.getX(vertexIndex);
-          const y = positions.getY(vertexIndex);
-          const z = positions.getZ(vertexIndex);
-          const connectedPosition = new THREE.Vector3(x, y, z);
-          
-          const distance = position.distanceTo(connectedPosition);
-          const weight = 1 / (1 + distance);
-
-          connectedVertices.push({
-            index: vertexIndex,
-            initialPosition: connectedPosition,
-            weight
-          });
-        });
-      }
+      }));
 
       return {
         draggedVertex: {
           index,
           position: position.clone(),
-          initialPosition: position.clone(),
-          connectedVertices
+          initialPosition: position.clone()
         }
       };
     }),
@@ -203,27 +152,13 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       const geometry = state.selectedObject.geometry;
       const positions = geometry.attributes.position;
       
-      // Calculate movement delta
-      const delta = position.clone().sub(state.draggedVertex.initialPosition);
-      
-      // Update dragged vertex position
+      // Update only the selected vertex position
       positions.setXYZ(
         state.draggedVertex.index,
-        state.draggedVertex.initialPosition.x + delta.x,
-        state.draggedVertex.initialPosition.y + delta.y,
-        state.draggedVertex.initialPosition.z + delta.z
+        position.x,
+        position.y,
+        position.z
       );
-
-      // Update connected vertices with weighted movement
-      state.draggedVertex.connectedVertices.forEach(({ index, initialPosition, weight }) => {
-        const weightedDelta = delta.clone().multiplyScalar(weight);
-        positions.setXYZ(
-          index,
-          initialPosition.x + weightedDelta.x,
-          initialPosition.y + weightedDelta.y,
-          initialPosition.z + weightedDelta.z
-        );
-      });
 
       positions.needsUpdate = true;
       geometry.computeVertexNormals();

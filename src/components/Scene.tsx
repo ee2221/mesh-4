@@ -17,17 +17,8 @@ const VertexPoints = ({ geometry }) => {
     ));
   }
 
-  return (
-    <points>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={vertices.length}
-          array={new Float32Array(vertices.flatMap(v => [v.x, v.y, v.z]))}
-          itemSize={3}
-        />
-      </bufferGeometry>
-      <pointsMaterial size={0.1} color="yellow" />
+  return editMode === 'vertex' ? (
+    <group>
       {vertices.map((vertex, i) => (
         <mesh
           key={i}
@@ -47,21 +38,21 @@ const VertexPoints = ({ geometry }) => {
           />
         </mesh>
       ))}
-    </points>
-  );
+    </group>
+  ) : null;
 };
 
 const EditModeOverlay = () => {
   const { scene, camera, raycaster, pointer } = useThree();
   const { 
     selectedObject, 
-    editMode, 
+    editMode,
     setSelectedElements,
     draggedVertex,
     updateVertexDrag,
     endVertexDrag
   } = useSceneStore();
-  const plane = useRef(new THREE.Plane(new THREE.Vector3(0, 1, 0)));
+  const plane = useRef(new THREE.Plane());
   const intersection = useRef(new THREE.Vector3());
 
   useEffect(() => {
@@ -69,26 +60,18 @@ const EditModeOverlay = () => {
 
     const handlePointerMove = (event) => {
       if (draggedVertex) {
+        // Update plane normal to face camera
+        const cameraDirection = new THREE.Vector3();
+        camera.getWorldDirection(cameraDirection);
+        plane.current.normal.copy(cameraDirection);
+        plane.current.setFromNormalAndCoplanarPoint(
+          cameraDirection,
+          draggedVertex.position
+        );
+
         raycaster.setFromCamera(pointer, camera);
-        raycaster.ray.intersectPlane(plane.current, intersection.current);
-        updateVertexDrag(intersection.current);
-        return;
-      }
-
-      raycaster.setFromCamera(pointer, camera);
-      const intersects = raycaster.intersectObject(selectedObject);
-
-      if (intersects.length > 0) {
-        const intersect = intersects[0];
-        if (editMode === 'vertex' && intersect.face) {
-          const vertices = [
-            intersect.face.a,
-            intersect.face.b,
-            intersect.face.c
-          ];
-          setSelectedElements('vertices', vertices);
-        } else if (editMode === 'face' && intersect.face) {
-          setSelectedElements('faces', [intersect.faceIndex || 0]);
+        if (raycaster.ray.intersectPlane(plane.current, intersection.current)) {
+          updateVertexDrag(intersection.current);
         }
       }
     };
@@ -120,13 +103,7 @@ const EditModeOverlay = () => {
 
   if (!selectedObject || !editMode || !(selectedObject instanceof THREE.Mesh)) return null;
 
-  return (
-    <>
-      {editMode === 'vertex' && (
-        <VertexPoints geometry={selectedObject.geometry} />
-      )}
-    </>
-  );
+  return <VertexPoints geometry={selectedObject.geometry} />;
 };
 
 const Scene: React.FC = () => {
