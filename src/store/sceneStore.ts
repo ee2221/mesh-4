@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import * as THREE from 'three';
 import { NURBSSurface } from 'three/examples/jsm/curves/NURBSSurface';
 import { NURBSCurve } from 'three/examples/jsm/curves/NURBSCurve';
-import { SubdivisionModifier } from 'three/examples/jsm/modifiers/SubdivisionModifier.js';
+import { SubdivisionModifier } from 'three/examples/jsm/modifiers/SubdivisionModifier';
 
 type EditMode = 'vertex' | 'edge' | 'face' | 'nurbs' | 'curve' | 'extrude' | 'bevel' | null;
 
