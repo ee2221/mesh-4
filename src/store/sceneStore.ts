@@ -22,6 +22,11 @@ interface SceneState {
     index: number;
     position: THREE.Vector3;
     initialPosition: THREE.Vector3;
+    connectedVertices: Array<{
+      index: number;
+      initialPosition: THREE.Vector3;
+      weight: number;
+    }>;
   } | null;
   addObject: (object: THREE.Object3D, name: string) => void;
   removeObject: (id: string) => void;
@@ -128,6 +133,52 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     set((state) => {
       if (!(state.selectedObject instanceof THREE.Mesh)) return state;
 
+      const geometry = state.selectedObject.geometry;
+      const positions = geometry.attributes.position;
+      const connectedVertices: Array<{ index: number; initialPosition: THREE.Vector3; weight: number }> = [];
+
+      // Find connected vertices through faces
+      if (geometry.index) {
+        const indices = geometry.index.array;
+        const vertexFaces = new Map<number, Set<number>>();
+
+        // Build vertex-to-face map
+        for (let i = 0; i < indices.length; i += 3) {
+          const faceIndices = [indices[i], indices[i + 1], indices[i + 2]];
+          faceIndices.forEach((vertexIndex) => {
+            if (!vertexFaces.has(vertexIndex)) {
+              vertexFaces.set(vertexIndex, new Set());
+            }
+            vertexFaces.get(vertexIndex)!.add(Math.floor(i / 3));
+          });
+        }
+
+        // Find vertices that share faces with the selected vertex
+        const selectedFaces = vertexFaces.get(index) || new Set();
+        selectedFaces.forEach((faceIndex) => {
+          const start = faceIndex * 3;
+          [indices[start], indices[start + 1], indices[start + 2]].forEach((vertexIndex) => {
+            if (vertexIndex !== index) {
+              const pos = new THREE.Vector3(
+                positions.getX(vertexIndex),
+                positions.getY(vertexIndex),
+                positions.getZ(vertexIndex)
+              );
+              
+              // Calculate weight based on distance
+              const dist = pos.distanceTo(position);
+              const weight = 1 / (1 + dist);
+
+              connectedVertices.push({
+                index: vertexIndex,
+                initialPosition: pos,
+                weight
+              });
+            }
+          });
+        });
+      }
+
       // Select only this vertex
       set((state) => ({
         selectedElements: {
@@ -140,7 +191,8 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         draggedVertex: {
           index,
           position: position.clone(),
-          initialPosition: position.clone()
+          initialPosition: position.clone(),
+          connectedVertices: Array.from(new Set(connectedVertices.map(JSON.stringify))).map(JSON.parse)
         }
       };
     }),
@@ -152,13 +204,26 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       const geometry = state.selectedObject.geometry;
       const positions = geometry.attributes.position;
       
-      // Update only the selected vertex position
+      // Calculate movement delta
+      const delta = position.clone().sub(state.draggedVertex.initialPosition);
+      
+      // Update main vertex position
       positions.setXYZ(
         state.draggedVertex.index,
-        position.x,
-        position.y,
-        position.z
+        state.draggedVertex.initialPosition.x + delta.x,
+        state.draggedVertex.initialPosition.y + delta.y,
+        state.draggedVertex.initialPosition.z + delta.z
       );
+
+      // Update connected vertices with weighted influence
+      state.draggedVertex.connectedVertices.forEach(({ index, initialPosition, weight }) => {
+        positions.setXYZ(
+          index,
+          initialPosition.x + delta.x * weight,
+          initialPosition.y + delta.y * weight,
+          initialPosition.z + delta.z * weight
+        );
+      });
 
       positions.needsUpdate = true;
       geometry.computeVertexNormals();
