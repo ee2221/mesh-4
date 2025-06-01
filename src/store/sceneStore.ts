@@ -19,7 +19,7 @@ interface SceneState {
     faces: number[];
   };
   draggedVertex: {
-    index: number;
+    indices: number[];
     position: THREE.Vector3;
     initialPosition: THREE.Vector3;
   } | null;
@@ -128,17 +128,38 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     set((state) => {
       if (!(state.selectedObject instanceof THREE.Mesh)) return state;
 
-      // Select only this vertex
+      const geometry = state.selectedObject.geometry;
+      const positions = geometry.attributes.position;
+      const overlappingIndices = [];
+      const selectedPos = new THREE.Vector3(
+        positions.getX(index),
+        positions.getY(index),
+        positions.getZ(index)
+      );
+
+      // Find all vertices at the same position
+      for (let i = 0; i < positions.count; i++) {
+        const pos = new THREE.Vector3(
+          positions.getX(i),
+          positions.getY(i),
+          positions.getZ(i)
+        );
+        if (pos.distanceTo(selectedPos) < 0.0001) {
+          overlappingIndices.push(i);
+        }
+      }
+
+      // Update selected vertices
       set((state) => ({
         selectedElements: {
           ...state.selectedElements,
-          vertices: [index]
+          vertices: overlappingIndices
         }
       }));
 
       return {
         draggedVertex: {
-          index,
+          indices: overlappingIndices,
           position: position.clone(),
           initialPosition: position.clone()
         }
@@ -152,13 +173,15 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       const geometry = state.selectedObject.geometry;
       const positions = geometry.attributes.position;
       
-      // Update only the selected vertex position
-      positions.setXYZ(
-        state.draggedVertex.index,
-        position.x,
-        position.y,
-        position.z
-      );
+      // Update all overlapping vertices
+      state.draggedVertex.indices.forEach(index => {
+        positions.setXYZ(
+          index,
+          position.x,
+          position.y,
+          position.z
+        );
+      });
 
       positions.needsUpdate = true;
       geometry.computeVertexNormals();

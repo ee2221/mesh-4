@@ -71,7 +71,11 @@ const EditModeOverlay = () => {
 
         raycaster.setFromCamera(pointer, camera);
         if (raycaster.ray.intersectPlane(plane.current, intersection.current)) {
-          updateVertexDrag(intersection.current);
+          // Transform the intersection point to object space
+          const worldMatrix = selectedObject.matrixWorld;
+          const inverseMatrix = new THREE.Matrix4().copy(worldMatrix).invert();
+          const localPosition = intersection.current.clone().applyMatrix4(inverseMatrix);
+          updateVertexDrag(localPosition);
         }
       }
     };
