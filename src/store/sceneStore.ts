@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import * as THREE from 'three';
 
+type EditMode = 'vertex' | 'edge' | 'face' | 'nurbs' | 'curve' | null;
+
 interface SceneState {
   objects: Array<{
     id: string;
@@ -9,22 +11,36 @@ interface SceneState {
     visible: boolean;
   }>;
   selectedObject: THREE.Object3D | null;
-  transformMode: 'translate' | 'rotate' | 'scale';
+  transformMode: 'translate' | 'rotate' | 'scale' | null;
+  editMode: EditMode;
+  selectedElements: {
+    vertices: number[];
+    edges: number[];
+    faces: number[];
+  };
   addObject: (object: THREE.Object3D, name: string) => void;
   removeObject: (id: string) => void;
   setSelectedObject: (object: THREE.Object3D | null) => void;
-  setTransformMode: (mode: 'translate' | 'rotate' | 'scale') => void;
+  setTransformMode: (mode: 'translate' | 'rotate' | 'scale' | null) => void;
+  setEditMode: (mode: EditMode) => void;
   toggleVisibility: (id: string) => void;
   updateObjectName: (id: string, name: string) => void;
   updateObjectProperties: () => void;
   updateObjectColor: (color: string) => void;
   updateObjectOpacity: (opacity: number) => void;
+  setSelectedElements: (type: 'vertices' | 'edges' | 'faces', indices: number[]) => void;
 }
 
 export const useSceneStore = create<SceneState>((set) => ({
   objects: [],
   selectedObject: null,
   transformMode: 'translate',
+  editMode: null,
+  selectedElements: {
+    vertices: [],
+    edges: [],
+    faces: [],
+  },
   addObject: (object, name) =>
     set((state) => ({
       objects: [...state.objects, { id: crypto.randomUUID(), object, name, visible: true }],
@@ -38,6 +54,7 @@ export const useSceneStore = create<SceneState>((set) => ({
     })),
   setSelectedObject: (object) => set({ selectedObject: object }),
   setTransformMode: (mode) => set({ transformMode: mode }),
+  setEditMode: (mode) => set({ editMode: mode }),
   toggleVisibility: (id) =>
     set((state) => {
       const updatedObjects = state.objects.map((obj) =>
@@ -81,4 +98,11 @@ export const useSceneStore = create<SceneState>((set) => ({
       }
       return state;
     }),
+  setSelectedElements: (type, indices) =>
+    set((state) => ({
+      selectedElements: {
+        ...state.selectedElements,
+        [type]: indices,
+      },
+    })),
 }));

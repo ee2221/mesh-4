@@ -1,10 +1,19 @@
 import React from 'react';
-import { Cuboid, Cherry, Cylinder, Cone, Pyramid, Move, RotateCw, Maximize, Sun } from 'lucide-react';
+import { 
+  Cuboid, Cherry, Cylinder, Cone, Pyramid, Move, RotateCw, Maximize, Sun,
+  Edit3, Vector, Box, Grid as GridIcon, Line, PenTool
+} from 'lucide-react';
 import { useSceneStore } from '../store/sceneStore';
 import * as THREE from 'three';
 
 const Toolbar: React.FC = () => {
-  const { addObject, setTransformMode, transformMode } = useSceneStore();
+  const { 
+    addObject, 
+    setTransformMode, 
+    transformMode, 
+    setEditMode,
+    editMode 
+  } = useSceneStore();
 
   const createObject = (geometry: THREE.BufferGeometry, name: string) => {
     const material = new THREE.MeshStandardMaterial({ color: 0x44aa88 });
@@ -18,17 +27,53 @@ const Toolbar: React.FC = () => {
       icon: Move,
       mode: 'translate',
       title: 'Move Tool',
+      type: 'transform'
     },
     {
       icon: RotateCw,
       mode: 'rotate',
       title: 'Rotate Tool',
+      type: 'transform'
     },
     {
       icon: Maximize,
       mode: 'scale',
       title: 'Scale Tool',
+      type: 'transform'
     },
+  ] as const;
+
+  const editTools = [
+    {
+      icon: Vector,
+      mode: 'vertex',
+      title: 'Edit Vertices',
+      type: 'edit'
+    },
+    {
+      icon: Line,
+      mode: 'edge',
+      title: 'Edit Edges',
+      type: 'edit'
+    },
+    {
+      icon: Box,
+      mode: 'face',
+      title: 'Edit Faces',
+      type: 'edit'
+    },
+    {
+      icon: PenTool,
+      mode: 'nurbs',
+      title: 'NURBS Tool',
+      type: 'edit'
+    },
+    {
+      icon: Edit3,
+      mode: 'curve',
+      title: 'Curve Tool',
+      type: 'edit'
+    }
   ] as const;
 
   return (
@@ -69,20 +114,45 @@ const Toolbar: React.FC = () => {
         >
           <Pyramid className="w-6 h-6" />
         </button>
+
         <div className="h-px bg-gray-200 my-2" />
+        
         {tools.map(({ icon: Icon, mode, title }) => (
           <button
             key={mode}
-            onClick={() => setTransformMode(mode)}
+            onClick={() => {
+              setTransformMode(mode);
+              setEditMode(null);
+            }}
             className={`p-2 rounded-lg transition-colors ${
-              transformMode === mode ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'
+              transformMode === mode && !editMode ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'
             }`}
             title={title}
           >
             <Icon className="w-6 h-6" />
           </button>
         ))}
+
         <div className="h-px bg-gray-200 my-2" />
+
+        {editTools.map(({ icon: Icon, mode, title }) => (
+          <button
+            key={mode}
+            onClick={() => {
+              setEditMode(mode);
+              setTransformMode(null);
+            }}
+            className={`p-2 rounded-lg transition-colors ${
+              editMode === mode ? 'bg-green-100 text-green-600' : 'hover:bg-gray-100'
+            }`}
+            title={title}
+          >
+            <Icon className="w-6 h-6" />
+          </button>
+        ))}
+
+        <div className="h-px bg-gray-200 my-2" />
+        
         <button
           className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           title="Add Light"
