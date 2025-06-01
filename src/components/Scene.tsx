@@ -4,6 +4,33 @@ import { OrbitControls, TransformControls, Grid } from '@react-three/drei';
 import { useSceneStore } from '../store/sceneStore';
 import * as THREE from 'three';
 
+const VertexPoints = ({ geometry }) => {
+  const positions = geometry.attributes.position;
+  const vertices = [];
+  
+  for (let i = 0; i < positions.count; i++) {
+    vertices.push(new THREE.Vector3(
+      positions.getX(i),
+      positions.getY(i),
+      positions.getZ(i)
+    ));
+  }
+
+  return (
+    <points>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          count={vertices.length}
+          array={new Float32Array(vertices.flatMap(v => [v.x, v.y, v.z]))}
+          itemSize={3}
+        />
+      </bufferGeometry>
+      <pointsMaterial size={0.1} color="yellow" />
+    </points>
+  );
+};
+
 const EditModeOverlay = () => {
   const { scene, camera, raycaster, pointer } = useThree();
   const { selectedObject, editMode, setSelectedElements } = useSceneStore();
@@ -37,19 +64,11 @@ const EditModeOverlay = () => {
   if (!selectedObject || !editMode || !(selectedObject instanceof THREE.Mesh)) return null;
 
   return (
-    <mesh>
-      <bufferGeometry attach="geometry" {...selectedObject.geometry}>
-        {editMode === 'vertex' && (
-          <pointsMaterial
-            attach="material"
-            size={0.1}
-            color="yellow"
-            transparent
-            opacity={0.8}
-          />
-        )}
-      </bufferGeometry>
-    </mesh>
+    <>
+      {editMode === 'vertex' && (
+        <VertexPoints geometry={selectedObject.geometry} />
+      )}
+    </>
   );
 };
 
