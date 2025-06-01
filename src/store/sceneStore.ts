@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import * as THREE from 'three';
 import { NURBSSurface } from 'three/examples/jsm/curves/NURBSSurface';
 import { NURBSCurve } from 'three/examples/jsm/curves/NURBSCurve';
+import { SubdivisionModifier } from 'three/examples/jsm/modifiers/SubdivisionModifier';
 
 type EditMode = 'vertex' | 'edge' | 'face' | 'nurbs' | 'curve' | 'extrude' | 'bevel' | null;
 
@@ -25,12 +26,14 @@ interface SceneState {
     position: THREE.Vector3;
     initialPosition: THREE.Vector3;
     connectedVertices: number[];
+    connectedFaces: number[];
   } | null;
   controlPoints: THREE.Vector3[];
   nurbsObjects: {
     surfaces: NURBSSurface[];
     curves: NURBSCurve[];
   };
+  subdivisionLevel: number;
   addObject: (object: THREE.Object3D, name: string) => void;
   removeObject: (id: string) => void;
   setSelectedObject: (object: THREE.Object3D | null) => void;
@@ -51,6 +54,8 @@ interface SceneState {
   createNURBSCurve: () => void;
   extrudeFace: (distance: number) => void;
   bevelEdge: (segments: number, offset: number) => void;
+  setSubdivisionLevel: (level: number) => void;
+  applySubdivision: () => void;
 }
 
 export const useSceneStore = create<SceneState>((set, get) => ({
@@ -69,10 +74,13 @@ export const useSceneStore = create<SceneState>((set, get) => ({
     surfaces: [],
     curves: [],
   },
+  subdivisionLevel: 1,
+
   addObject: (object, name) =>
     set((state) => ({
       objects: [...state.objects, { id: crypto.randomUUID(), object, name, visible: true }],
     })),
+
   removeObject: (id) =>
     set((state) => ({
       objects: state.objects.filter((obj) => obj.id !== id),
@@ -80,9 +88,11 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         ? null
         : state.selectedObject,
     })),
+
   setSelectedObject: (object) => set({ selectedObject: object }),
   setTransformMode: (mode) => set({ transformMode: mode }),
   setEditMode: (mode) => set({ editMode: mode }),
+
   toggleVisibility: (id) =>
     set((state) => {
       const updatedObjects = state.objects.map((obj) =>
@@ -100,13 +110,16 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         selectedObject: newSelectedObject,
       };
     }),
+
   updateObjectName: (id, name) =>
     set((state) => ({
       objects: state.objects.map((obj) =>
         obj.id === id ? { ...obj, name } : obj
       ),
     })),
+
   updateObjectProperties: () => set((state) => ({ ...state })),
+
   updateObjectColor: (color) => 
     set((state) => {
       if (state.selectedObject instanceof THREE.Mesh) {
@@ -116,6 +129,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       }
       return state;
     }),
+
   updateObjectOpacity: (opacity) =>
     set((state) => {
       if (state.selectedObject instanceof THREE.Mesh) {
@@ -126,6 +140,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       }
       return state;
     }),
+
   setSelectedElements: (type, indices) =>
     set((state) => ({
       selectedElements: {
@@ -133,6 +148,7 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         [type]: indices,
       },
     })),
+
   startVertexDrag: (index, position) =>
     set((state) => {
       if (!(state.selectedObject instanceof THREE.Mesh)) return state;
@@ -140,14 +156,15 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       const geometry = state.selectedObject.geometry;
       const positions = geometry.attributes.position;
       const connectedVertices: number[] = [];
+      const connectedFaces: number[] = [];
 
-      // Find connected vertices by analyzing the geometry's index buffer
+      // Find connected vertices and faces
       if (geometry.index) {
         const indices = geometry.index.array;
         for (let i = 0; i < indices.length; i += 3) {
           for (let j = 0; j < 3; j++) {
             if (indices[i + j] === index) {
-              // Add the other two vertices of the triangle
+              connectedFaces.push(Math.floor(i / 3));
               connectedVertices.push(
                 indices[i + ((j + 1) % 3)],
                 indices[i + ((j + 2) % 3)]
@@ -162,10 +179,12 @@ export const useSceneStore = create<SceneState>((set, get) => ({
           index,
           position: position.clone(),
           initialPosition: position.clone(),
-          connectedVertices: Array.from(new Set(connectedVertices))
+          connectedVertices: Array.from(new Set(connectedVertices)),
+          connectedFaces
         }
       };
     }),
+
   updateVertexDrag: (position) =>
     set((state) => {
       if (!state.draggedVertex || !(state.selectedObject instanceof THREE.Mesh)) return state;
@@ -190,17 +209,18 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         const y = positions.getY(vertexIndex);
         const z = positions.getZ(vertexIndex);
         
-        // Apply a fraction of the movement to connected vertices
+        // Apply a fraction of the movement to maintain mesh topology
         positions.setXYZ(
           vertexIndex,
-          x + delta.x * 0.5,
-          y + delta.y * 0.5,
-          z + delta.z * 0.5
+          x + delta.x * 0.25,
+          y + delta.y * 0.25,
+          z + delta.z * 0.25
         );
       });
 
       positions.needsUpdate = true;
       geometry.computeVertexNormals();
+      geometry.computeBoundingSphere();
       
       return {
         draggedVertex: {
@@ -209,29 +229,35 @@ export const useSceneStore = create<SceneState>((set, get) => ({
         }
       };
     }),
+
   endVertexDrag: () =>
     set({ draggedVertex: null }),
+
   addControlPoint: (point) =>
     set((state) => ({
       controlPoints: [...state.controlPoints, point],
     })),
+
   clearControlPoints: () =>
-    set((state) => ({
-      controlPoints: [],
-    })),
+    set({ controlPoints: [] }),
+
   createNURBSSurface: () => {
     const { controlPoints } = get();
     if (controlPoints.length >= 16) {
       const surface = new NURBSSurface(2, 2, 4, 4, controlPoints);
-      set((state) => ({
-        nurbsObjects: {
-          ...state.nurbsObjects,
-          surfaces: [...state.nurbsObjects.surfaces, surface],
-        },
-        controlPoints: [],
-      }));
+      const geometry = new THREE.ParametricGeometry((u, v, target) => {
+        const p = surface.getPoint(u, v);
+        target.set(p.x, p.y, p.z);
+      }, 20, 20);
+      
+      const material = new THREE.MeshStandardMaterial({ color: 0x44aa88 });
+      const mesh = new THREE.Mesh(geometry, material);
+      
+      get().addObject(mesh, 'NURBS Surface');
+      get().clearControlPoints();
     }
   },
+
   createNURBSCurve: () => {
     const { controlPoints } = get();
     if (controlPoints.length >= 4) {
@@ -240,30 +266,46 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       for (let i = 0; i <= controlPoints.length + degree; i++) {
         knots.push(i);
       }
+      
       const curve = new NURBSCurve(degree, knots, controlPoints);
-      set((state) => ({
-        nurbsObjects: {
-          ...state.nurbsObjects,
-          curves: [...state.nurbsObjects.curves, curve],
-        },
-        controlPoints: [],
-      }));
+      const geometry = new THREE.BufferGeometry().setFromPoints(curve.getPoints(50));
+      const material = new THREE.LineBasicMaterial({ color: 0x44aa88 });
+      const curveObject = new THREE.Line(geometry, material);
+      
+      get().addObject(curveObject, 'NURBS Curve');
+      get().clearControlPoints();
     }
   },
+
   extrudeFace: (distance) => {
     const { selectedObject, selectedElements } = get();
     if (selectedObject instanceof THREE.Mesh && selectedElements.faces.length > 0) {
       const geometry = selectedObject.geometry as THREE.BufferGeometry;
+      // Extrusion logic would go here
       geometry.computeVertexNormals();
       geometry.computeBoundingSphere();
     }
   },
+
   bevelEdge: (segments, offset) => {
     const { selectedObject, selectedElements } = get();
     if (selectedObject instanceof THREE.Mesh && selectedElements.edges.length > 0) {
       const geometry = selectedObject.geometry as THREE.BufferGeometry;
+      // Beveling logic would go here
       geometry.computeVertexNormals();
       geometry.computeBoundingSphere();
+    }
+  },
+
+  setSubdivisionLevel: (level) => set({ subdivisionLevel: level }),
+
+  applySubdivision: () => {
+    const { selectedObject, subdivisionLevel } = get();
+    if (selectedObject instanceof THREE.Mesh) {
+      const modifier = new SubdivisionModifier(subdivisionLevel);
+      const newGeometry = modifier.modify(selectedObject.geometry);
+      selectedObject.geometry.dispose();
+      selectedObject.geometry = newGeometry;
     }
   },
 }));
